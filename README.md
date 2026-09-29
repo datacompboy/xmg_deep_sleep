@@ -14,22 +14,22 @@ Best: wait for the firmware update :)
 
 Next step: you can try to use the same patch that worked for me.
 
-1. Download https://github.com/acidanthera/OpenCorePkg/releases/download/1.0.8/OpenCore-1.0.8-RELEASE.zip
+1. Download [OpenCore](https://github.com/acidanthera/OpenCorePkg/releases/download/1.0.8/OpenCore-1.0.8-RELEASE.zip)
 2. Get "EFI" from X64 folder from it
 3. Mix into it contents from `xmg_neo_m22/EFI`
-4. Follow [skill/Install.md]
+4. Follow [skill/Install.md](skill/Install.md)
 5. Good luck!
 
 ## I have another laptop/pc with sleep problem
 
-Fire your agent and ask it to follow the [skill/DeepSleepInvestigateSkill.md]. That should be enough to start your engine running.
+Fire your agent and ask it to follow the [skill/DeepSleepInvestigateSkill.md](skill/DeepSleepInvestigateSkill.md). That should be enough to start your engine running.
 
 ## What's and where in this repo?
 
-- [xmg_neo_m22/EFI]: the config for OpenCore (tested on v1.0.8) that patches BIOS and chainloads into Windows as usual.
-- [xmg_neo_m22/RootCause.md]: raw rootcausing log from the process, maintained by LLM
-- [retro/]: multiple angles of retro analysis of the debug session
-- [skill/]: folder with generalized analysis skill, aimed at seeding debug session avoiding jump-to-conclusion pitfalls.
+- [xmg_neo_m22/EFI](xmg_neo_m22/EFI): the config for OpenCore (tested on v1.0.8) that patches BIOS and chainloads into Windows as usual.
+- [xmg_neo_m22/RootCause.md](xmg_neo_m22/RootCause.md): raw rootcausing log from the process, maintained by LLM
+- [retro/](retro/): multiple angles of retro analysis of the debug session
+- [skill/](skill/): folder with generalized analysis skill, aimed at seeding debug session avoiding jump-to-conclusion pitfalls.
 
 ## Disclaimers
 
