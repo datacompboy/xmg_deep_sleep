@@ -502,6 +502,7 @@ OpenCore is used strictly as an in-memory ACPI patcher during UEFI boot:
 2. **SSDT Injection:** OpenCore inserts `SSDT-SLEEPFIX.aml` into the system XSDT.
 3. **Dynamic Memory Safety:** OpenCore does **not** drop `Opt2Tabl` or alter dynamic ACPI NVS memory regions (`OperationRegion TPNV, SystemMemory, 0xD3CD8000, 0x004D`), avoiding Windows Bugcheck `0xA5 (ACPI_BIOS_ERROR)`.
 4. **Persistence Through Sleep:** Once patched tables are loaded into Windows non-paged kernel pool at boot, they remain active 100% of the time. The BIOS ROM is never re-read during Modern Standby (S0ix) sleep or wake.
+5. **Self-Loop Prevention (`.contentVisibility`):** When OpenCore is registered in UEFI NVRAM `BootOrder` (e.g., via `{fwbootmgr}` / `bcdedit`), OpenCore's boot management scanner (`OcScanForBootEntries`) reads `BootOrder` on startup. Because `BootOrder[0]` points to `\EFI\OC\OpenCore.efi`, OpenCore would detect its own binary on the ESP as an unknown operating system (displaying as `"NO NAME"` from the FAT32 volume label) and mark itself as the default boot entry. Left unaddressed, OpenCore would loop-load itself upon timeout instead of chainloading Windows. Placing a `.contentVisibility` file containing `Disabled` in `\EFI\OC\` (and `\EFI\BOOT\`) instructs OpenCore's `ReadEntryVisibility()` to silently discard itself from the boot picker, ensuring `\EFI\Microsoft\Boot\bootmgfw.efi` ("Windows") is cleanly selected as the sole default boot entry.
 
 ---
 
@@ -517,7 +518,7 @@ While the manufacturer evaluates this report and incorporates the patched ACPI l
 3. **Enroll OpenCore's Hash in Authorized Signatures (`db`):**
    - Select **Authorized Signatures (`db`)** $\rightarrow$ **Enroll Efi Image** (or **Append from file**).
    - Browse to the USB thumb drive or internal EFI system partition:
-     `EFI\BOOT\BOOTX64.EFI` (or `EFI\OC\OpenCore.efi`).
+     `EFI\BOOT\BOOTX64.EFI` (or `EFI\OC\OpenCore.efi` and `EFI\OC\Drivers\OpenRuntime.efi`).
    - Confirm enrollment. The BIOS calculates the SHA-256 hash of the OpenCore binary and commits it to the secure NVRAM `db` keystore.
 4. **Enable Secure Boot:**
    - Set **Secure Boot** to `Enabled`.
@@ -534,8 +535,8 @@ Once verified on USB:
    ```powershell
    mountvol S: /s
    ```
-2. Copy the `EFI\OC` folder and `EFI\BOOT` to `S:\EFI\OC`.
-3. Enroll `S:\EFI\BOOT\BOOTX64.EFI` in BIOS `db` using Method 1 above. The laptop boots with the ACPI fix automatically on every startup.
+2. Copy the `EFI\OC` folder to `S:\EFI\OC` (including `S:\EFI\OC\.contentVisibility` containing `Disabled` to prevent OpenCore from enumerating itself in the boot picker).
+3. Register OpenCore in UEFI NVRAM `{fwbootmgr}` and enroll its hash in BIOS `db` using Method 1 above. The laptop boots with the ACPI fix automatically on every startup.
 
 ---
 

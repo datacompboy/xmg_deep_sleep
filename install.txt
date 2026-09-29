@@ -1,0 +1,98 @@
+  To run this fix permanently from your internal NVMe SSD with Secure Boot fully active (and BitLocker unlocked), here is the step-by-step guide.
+  ──────
+  ### Overview of How It Works
+
+  Secure Boot validates bootloaders by checking their cryptographic signature or hash against the motherboard's Authorized Signature Database (db).
+  Because OpenCore is open-source, Microsoft does not sign it by default.
+
+  On AMI Aptio V firmware (like on your Tongfang/XMG chassis), you have two clean ways to authorize it:
+
+  • Option A (Easiest - 0 commands): Directly enroll the binary hash of OpenCore.efi in the BIOS Key Management menu.
+  • Option B (Standard): Self-sign OpenCore.efi with your own key and append your certificate to db.
+  ──────
+  ## Step 1: Install OpenCore to Your Internal NVMe SSD (Get Rid of USB)
+
+  You don't need the USB drive anymore. We install OpenCore onto your internal NVMe drive's EFI System Partition (ESP).
+
+  ### From Windows (Recommended):
+
+  1. Open PowerShell as Administrator.
+  2. Mount your internal NVMe EFI partition to drive letter S::
+    mountvol S: /s
+
+  3. Copy the OC folder from your USB (or our workspace EFI/OC) into S:\EFI\OC:
+    # If copying from current workspace or USB drive D:
+    Copy-Item -Recurse -Force D:\EFI\OC S:\EFI\OC
+
+  4. Register OpenCore.efi as a UEFI boot entry:
+  You can point Windows Boot Manager's path to OpenCore, or create a dedicated NVRAM boot option:
+    # Option 1: Using bcdedit to chainload OpenCore as default
+    bcdedit /set "{bootmgr}" path \EFI\OC\OpenCore.efi
+  (To revert back to stock Windows Boot Manager at any time in the future, just run: bcdedit /set "{bootmgr}" path \EFI\Microsoft\Boot\bootmgfw.efi)
+  ──────
+  ## Step 2: Configure OpenCore config.plist for Silent Autoboot (Optional)
+
+  If you don't want OpenCore's boot picker menu to show up every time you turn on your laptop and want it to boot Windows directly:
+  In S:\EFI\OC\config.plist (under Misc -> Boot):
+
+  • ShowPicker: Set to false (or press Space at boot to reveal it).
+  • Timeout: Set to 0 (or 3 seconds).
+  ──────
+  ## Step 3: Enable Secure Boot with OpenCore
+
+  ### Option A: Direct Hash Enrollment in BIOS (No signing tools needed)
+
+  AMI Aptio V has a built-in feature to whitelist any EFI file by its cryptographic SHA-256 hash:
+
+  1. Reboot your laptop and press F2 to enter BIOS Setup.
+  2. Go to Security → Secure Boot.
+  3. Set Secure Boot Mode to Custom.
+  4. Select Key Management → Authorized Signatures (db).
+  5. Select Enroll Hash (or Append Signature / Enroll Image).
+  6. A file browser will appear:
+      • Select your internal NVMe drive (FS0: or FS1:).
+      • Navigate to \EFI\OC\OpenCore.efi and press Enter.
+      • Confirm: Yes to enroll the hash.
+      • Do the same for \EFI\BOOT\BOOTx64.efi if you use it.
+  7. Return to the main Secure Boot menu and set Secure Boot: Enabled.
+  8. Press F10 (Save & Exit).
+  ──────
+  ### Option B: Self-Signing with Custom Keys (Standard PKI)
+
+  If you prefer traditional certificate-based signing:
+
+  1. In Linux, generate your own signing key pair:
+    openssl req -new -x509 -newkey rsa:2048 -sha256 -nodes -days 3650 \
+        -subj "/CN=XMG OpenCore Key/" -keyout mykey.key -out mykey.crt
+    openssl x509 -in mykey.crt -outform DER -out mykey.cer
+
+  2. Install sbsigntool:
+    sudo apt-get install sbsigntool
+
+  3. Sign OpenCore.efi:
+    sbsign --key mykey.key --cert mykey.crt --output OpenCore.efi OpenCore.efi
+
+  4. Copy mykey.cer to your EFI partition.
+  5. In BIOS Setup:
+      • Security → Secure Boot → Key Management → Authorized Signatures (db) → Append Key.
+      • Browse to mykey.cer and confirm.
+      • Keep Microsoft's factory keys (Microsoft Corporation UEFI CA 2011, Windows Production PCA 2011) untouched so Windows and firmware updates continue to pass
+      validation.
+      • Set Secure Boot: Enabled.
+
+  ──────
+  ### What Happens at Boot:
+
+    [Motherboard Firmware (Secure Boot ON)]
+       │ Validates OpenCore.efi against enrolled custom key/hash in 'db'
+       ▼
+    [OpenCore Loader (Patches ACPI in RAM)]
+       │ Injects SSDT-SLEEPFIX.aml (GC6O, _ON, _OFF, _STA, _PS0, _PS3)
+       │ Validates & chainloads \EFI\Microsoft\Boot\bootmgfw.efi
+       ▼
+    [Windows Boot Manager (bootmgfw.efi)]
+       │ Validated via factory Microsoft Windows Production PCA 2011 in 'db'
+       │ BitLocker PCR 7 validation PASSES (Secure Boot is fully active!)
+       ▼
+    [Windows 11 Desktop]
+       │ Modern Standby sleeps and wakes cleanly with external monitor attached!
