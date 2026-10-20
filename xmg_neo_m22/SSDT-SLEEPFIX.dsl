@@ -1,37 +1,62 @@
 DefinitionBlock ("", "SSDT", 2, "XMG", "SLEEPFIX", 0x00001000)
 {
     External (_SB_.PCI0.GPP0, DeviceObj)
-    External (_SB_.PCI0.GPP0.APGN, MethodObj)
-    External (_SB_.PCI0.GPP0.BPGN, MethodObj)
+    External (_SB_.PCI0.GPP0.APGF, MethodObj)    // 0 Arguments
+    External (_SB_.PCI0.GPP0.APGN, MethodObj)    // 0 Arguments
+    External (_SB_.PCI0.GPP0.BPGF, MethodObj)    // 0 Arguments
+    External (_SB_.PCI0.GPP0.BPGN, MethodObj)    // 0 Arguments
     External (_SB_.PCI0.GPP0.CEDR, FieldUnitObj)
     External (_SB_.PCI0.GPP0.CMDR, FieldUnitObj)
     External (_SB_.PCI0.GPP0.D0ST, FieldUnitObj)
     External (_SB_.PCI0.GPP0.DGCX, IntObj)
-    External (_SB_.PCI0.GPP0.DL23, MethodObj)
-    External (_SB_.PCI0.GPP0.GSTA, MethodObj)
-    External (_SB_.PCI0.GPP0.L23D, MethodObj)
+    External (_SB_.PCI0.GPP0.DL23, MethodObj)    // 1 Arguments
+    External (_SB_.PCI0.GPP0.GSTA, MethodObj)    // 0 Arguments
+    External (_SB_.PCI0.GPP0.L23D, MethodObj)    // 1 Arguments
     External (_SB_.PCI0.GPP0.LREN, FieldUnitObj)
+    External (_SB_.PCI0.GPP0.NHDA, DeviceObj)
     External (_SB_.PCI0.GPP0.PEGP, DeviceObj)
     External (_SB_.PCI0.GPP0.PEGP._PSC, IntObj)
     External (_SB_.PCI0.GPP0.PEGP.DGPS, IntObj)
-    External (_SB_.PCI0.GPP0.PEGP.DLYM, MethodObj)
+    External (_SB_.PCI0.GPP0.PEGP.DLYM, MethodObj)    // 1 Arguments
     External (_SB_.PCI0.GPP0.PEGP.LTRE, IntObj)
     External (_SB_.PCI0.GPP0.PEGP.NVID, FieldUnitObj)
     External (_SB_.PCI0.GPP0.PEGP.SSSV, FieldUnitObj)
     External (_SB_.PCI0.GPP0.PG00, PowerResObj)
-    External (_SB_.PCI0.GPP0.PON_, MethodObj)
+    External (_SB_.PCI0.GPP0.POFF, MethodObj)    // 0 Arguments
+    External (_SB_.PCI0.GPP0.PON_, MethodObj)    // 0 Arguments
     External (_SB_.PCI0.GPP0.TDGC, IntObj)
-    External (_SB_.PCI0.SBRG.EC0_.DBD1, FieldUnitObj)
-    External (_SB_.PCI0.SBRG.EC0_.DBD2, FieldUnitObj)
+    External (_SB_.PCI0.GPP0.TGPC, BuffObj)
     External (EBAS, FieldUnitObj)
     External (HYSS, FieldUnitObj)
-    External (M010, MethodObj)
+    External (M010, MethodObj)    // 2 Arguments
     External (M453, FieldUnitObj)
     External (PTOF, FieldUnitObj)
     External (REST, IntObj)
 
+    //
+    // 1. Declarative D3cold topology for Function 1 (Audio)
+    // Tells Windows pci.sys to natively save/restore Function 1 BAR0 & IRQ across D3cold.
+    //
+    Scope (\_SB.PCI0.GPP0.NHDA)
+    {
+        Name (_PR0, Package (0x01) { \_SB.PCI0.GPP0.PG00 })
+        Name (_PR2, Package (0x01) { \_SB.PCI0.GPP0.PG00 })
+        Name (_PR3, Package (0x01) { \_SB.PCI0.GPP0.PG00 })
+        Method (_S0W, 0, NotSerialized) { Return (0x04) }
+    }
+
+    //
+    // 2. Declarative D3cold topology & BAR Save/Restore for Function 0 (Graphics)
+    // Anchors Power Resource PG00 reference count to Function 0 while in D0.
+    // Prevents PG00._OFF() from running during S0 Video Idle Timeout while PEGP is in D0!
+    //
     Scope (\_SB.PCI0.GPP0.PEGP)
     {
+        Name (_PR0, Package (0x01) { \_SB.PCI0.GPP0.PG00 })
+        Name (_PR2, Package (0x01) { \_SB.PCI0.GPP0.PG00 })
+        Name (_PR3, Package (0x01) { \_SB.PCI0.GPP0.PG00 })
+        Method (_S0W, 0, NotSerialized) { Return (0x04) }
+
         OperationRegion (XPC1, SystemMemory, EBAS, 0x0500)
         Field (XPC1, WordAcc, NoLock, Preserve)
         {
@@ -61,25 +86,11 @@ DefinitionBlock ("", "SSDT", 2, "XMG", "SLEEPFIX", 0x00001000)
         Name (VVAL, Zero)
 
         //
-        // Patched GC6I: Power-Down / Sleep Entry to GC6
-        // Saves BARs while dGPU is fully alive, parks link, and asserts PERST#.
-        // Idempotent: safe if called by both NVJT and PG00._OFF.
+        // GC6 Entry: Captures BAR0..5 before hardware PERST# is asserted
         //
         Method (GC6I, 0, Serialized)
         {
-            Debug = "<<< GC6I (Patched v28) >>>"
-            If ((DGPS == One))
-            {
-                Return (Zero)
-            }
-
-            If (CondRefOf (\_SB.PCI0.SBRG.EC0.DBD1))
-            {
-                \_SB.PCI0.SBRG.EC0.DBD1 = 0x61 // 'a'
-                \_SB.PCI0.SBRG.EC0.DBD2 = One
-            }
-
-            // Save BAR registers while device is in D0/D3hot
+            Debug = "<<< GC6I (Patched v46) >>>"
             If ((\_SB.PCI0.GPP0.PEGP.NVID == 0x10DE))
             {
                 If (((VBA0 != Zero) && (VBA0 != 0xFFFFFFFF)))
@@ -99,63 +110,21 @@ DefinitionBlock ("", "SSDT", 2, "XMG", "SLEEPFIX", 0x00001000)
             DLYM (0x0A)
             M010 (REST, Zero)
             DGPS = One
-
-            If (CondRefOf (\_SB.PCI0.SBRG.EC0.DBD1))
-            {
-                \_SB.PCI0.SBRG.EC0.DBD1 = 0x61
-                \_SB.PCI0.SBRG.EC0.DBD2 = 0x02
-            }
-
             Return (Zero)
         }
 
         //
-        // Patched GC6O: Power-Up / Wake Exit from GC6
-        // Deasserts PERST#, settles GA104 power, unparks L23 link, enables bridge decoding,
-        // polls NVID with bounded timeout (NO INFINITE LOOP!), restores BARs, enables VCMD,
-        // and restores Function 1 High Definition Audio.
-        // Idempotent: safe if called by both PG00._ON and NVJT.
+        // GC6 Exit: Restores PERST#, link, BAR0..5, Command (MSE/BME), Subsystem ID & HDA strap
         //
         Method (GC6O, 0, Serialized)
         {
-            Debug = "<<< GC6O (Patched v28) >>>"
-            If (((DGPS == Zero) && (\_SB.PCI0.GPP0.PEGP.NVID == 0x10DE)))
-            {
-                Return (Zero)
-            }
-
-            If (CondRefOf (\_SB.PCI0.SBRG.EC0.DBD1))
-            {
-                \_SB.PCI0.SBRG.EC0.DBD1 = 0x6F // 'o'
-                \_SB.PCI0.SBRG.EC0.DBD2 = One
-            }
-
-            // Step 1: Deassert PERST#
+            Debug = "<<< GC6O (Patched v46) >>>"
             M010 (REST, One)
-
-            // Step 2: Settling delay (20ms) for GA104 power rails & clocks
             DLYM (0x14)
-
-            If (CondRefOf (\_SB.PCI0.SBRG.EC0.DBD1))
-            {
-                \_SB.PCI0.SBRG.EC0.DBD1 = 0x6F
-                \_SB.PCI0.SBRG.EC0.DBD2 = 0x02
-            }
-
-            // Step 3: Unpark PCIe link from L23
             \_SB.PCI0.GPP0.L23D (One)
-
-            // Step 4: Enable full bridge decode (Bus Master, Memory Space, I/O Space)
             \_SB.PCI0.GPP0.CMDR |= 0x07
             \_SB.PCI0.GPP0.D0ST = Zero
 
-            If (CondRefOf (\_SB.PCI0.SBRG.EC0.DBD1))
-            {
-                \_SB.PCI0.SBRG.EC0.DBD1 = 0x6F
-                \_SB.PCI0.SBRG.EC0.DBD2 = 0x03
-            }
-
-            // Step 5: Bounded polling for NVID == 0x10DE (max 50ms = 500 * 100us)
             Local0 = 0x01F4
             While (((\_SB.PCI0.GPP0.PEGP.NVID != 0x10DE) && (Local0 > Zero)))
             {
@@ -168,7 +137,7 @@ DefinitionBlock ("", "SSDT", 2, "XMG", "SLEEPFIX", 0x00001000)
                 \_SB.PCI0.GPP0.LREN = \_SB.PCI0.GPP0.PEGP.LTRE
                 \_SB.PCI0.GPP0.CEDR = One
 
-                // Restore saved BARs
+                // Restore BAR0..5 expected by Resman
                 If ((VVAL == One))
                 {
                     VBA0 = SBA0
@@ -177,96 +146,89 @@ DefinitionBlock ("", "SSDT", 2, "XMG", "SLEEPFIX", 0x00001000)
                     VBA3 = SBA3
                     VBA4 = SBA4
                     VBA5 = SBA5
+                    VVAL = Zero
                 }
 
-                // Restore Command register: Bus Master, Memory Space, I/O Space
+                // Enable Bus Master & Memory Space Decode
                 VCMD |= 0x07
 
-                // Re-enable Function 1 (NVIDIA High Definition Audio Controller)
+                // Restore Subsystem ID & Audio Function 1 Silicon Strap
+                \_SB.PCI0.GPP0.PEGP.SSSV = HYSS
                 HDA8 |= 0x02000000
-
-                DLYM (One)
-
-                If (CondRefOf (\_SB.PCI0.SBRG.EC0.DBD1))
-                {
-                    \_SB.PCI0.SBRG.EC0.DBD1 = 0x6F
-                    \_SB.PCI0.SBRG.EC0.DBD2 = 0x05
-                }
-            }
-            Else
-            {
-                // Bounded loop expired without NVID == 0x10DE.
-                // Do not lock up ACPI. Mark state in EC debug register.
-                If (CondRefOf (\_SB.PCI0.SBRG.EC0.DBD1))
-                {
-                    \_SB.PCI0.SBRG.EC0.DBD1 = 0x6F
-                    \_SB.PCI0.SBRG.EC0.DBD2 = 0xEE
-                }
+                DLYM (0x05)
             }
 
             DGPS = Zero
+            \_SB.PCI0.GPP0.TDGC = Zero
+            \_SB.PCI0.GPP0.DGCX = Zero
             Return (Zero)
         }
 
-        //
-        // Patched _PS0:
-        // Sets _PSC = 0 and calls PG00._ON() if dGPU was asleep (DGPS != 0).
-        // CRITICAL FIX: Permanently removes the OEM 'VGAR = VGAB' bulk write which
-        // blasted 250 bytes of uninitialized zeroes across GA104 config space,
-        // destroying BARs, VCMD, and HDAE and causing BugCheck 0x19C (0x50)!
-        //
+        // Clean _PS0: Dispatches to PG00._ON() if DGPS is set; zero blind config space writes!
         Method (_PS0, 0, NotSerialized)
         {
-            Debug = "<<< _PS0 (Patched v28) >>>"
+            Debug = "<<< _PS0 (Patched v46) >>>"
             _PSC = Zero
             If ((DGPS != Zero))
             {
                 \_SB.PCI0.GPP0.PG00._ON ()
                 DGPS = Zero
             }
+
+            If ((\_SB.PCI0.GPP0.PEGP.NVID == 0x10DE))
+            {
+                HDA8 |= 0x02000000
+            }
         }
     }
 
+    //
+    // 3. Symmetrical Power Resource PG00
+    //
     Scope (\_SB.PCI0.GPP0.PG00)
     {
-        //
-        // Patched PG00._ON:
-        // Handles both GC6 wake (TDGC == 1 or DGPS == 1) and cold PON wake (GSTA == 0).
-        // Fixes OEM defect where GSTA != 0 aborted _ON and blocked GC6O from ever executing.
-        //
-        Method (_ON, 0, Serialized)
+        Method (_OFF, 0, Serialized)
         {
+            Debug = "<<< PG00._OFF (Patched v46) >>>"
+            If ((\_SB.PCI0.GPP0.GSTA () != One))
+            {
+                Return (Zero)
+            }
+
             Local4 = M453
             M453 = Zero
 
-            // Path A: Wake from GC6 (Desktop deep sleep)
-            If ((\_SB.PCI0.GPP0.TDGC == One) || (\_SB.PCI0.GPP0.PEGP.DGPS == One) || (\_SB.PCI0.GPP0.PEGP.NVID != 0x10DE))
-            {
-                If (CondRefOf (\_SB.PCI0.SBRG.EC0.DBD1))
-                {
-                    \_SB.PCI0.SBRG.EC0.DBD1 = One
-                    \_SB.PCI0.SBRG.EC0.DBD2 = One
-                }
+            //
+            // Multi-cycle Modern Standby S0ix fix:
+            // ALWAYS enter warm GC6 via PEGP.GC6I().
+            // NEVER call POFF()! POFF() cuts 12V power rails (M010(PWEN, 0)),
+            // which violently drops the PCIe link and destroys the active display
+            // engine driving the external monitor, freezing the Zen root complex at 0s.
+            // In GC6, 12V power remains live, PERST# is asserted after link parking,
+            // BAR0..5 are saved, and the system sleeps and wakes cleanly across infinite cycles.
+            //
+            \_SB.PCI0.GPP0.PEGP.GC6I ()
 
-                \_SB.PCI0.GPP0.PEGP.GC6O ()
-                \_SB.PCI0.GPP0.TDGC = Zero
-                \_SB.PCI0.GPP0.DGCX = Zero
-            }
-            // Path B: Cold power-on from POFF (Lock screen deep sleep - proven working in Session 146 & 149)
-            ElseIf ((\_SB.PCI0.GPP0.GSTA () == Zero))
-            {
-                If (CondRefOf (\_SB.PCI0.SBRG.EC0.DBD1))
-                {
-                    \_SB.PCI0.SBRG.EC0.DBD1 = One
-                    \_SB.PCI0.SBRG.EC0.DBD2 = 0x02
-                }
+            M453 = Local4
+            Return (Zero)
+        }
 
+        Method (_ON, 0, Serialized)
+        {
+            Debug = "<<< PG00._ON (Patched v46) >>>"
+            Local4 = M453
+            M453 = Zero
+
+            // Path A: Wake from POFF() (GSTA == 0, cold power cut)
+            If ((\_SB.PCI0.GPP0.GSTA () == Zero))
+            {
                 \_SB.PCI0.GPP0.BPGN ()
                 \_SB.PCI0.GPP0.PON ()
                 Sleep (0x012C)
                 \_SB.PCI0.GPP0.L23D (PTOF)
                 \_SB.PCI0.GPP0.CMDR |= 0x07
                 \_SB.PCI0.GPP0.D0ST = Zero
+
                 Local0 = 0x64
                 While (((\_SB.PCI0.GPP0.PEGP.NVID != 0x10DE) && (Local0 > Zero)))
                 {
@@ -279,17 +241,19 @@ DefinitionBlock ("", "SSDT", 2, "XMG", "SLEEPFIX", 0x00001000)
                     \_SB.PCI0.GPP0.LREN = \_SB.PCI0.GPP0.PEGP.LTRE
                     \_SB.PCI0.GPP0.CEDR = One
                     \_SB.PCI0.GPP0.PEGP.SSSV = HYSS
+                    \_SB.PCI0.GPP0.PEGP.HDA8 |= 0x02000000
+                    \_SB.PCI0.GPP0.PEGP.DLYM (0x05)
                     \_SB.PCI0.GPP0.APGN ()
                 }
+
+                \_SB.PCI0.GPP0.PEGP.DGPS = Zero
+                \_SB.PCI0.GPP0.TDGC = Zero
+                \_SB.PCI0.GPP0.DGCX = Zero
             }
-            // Path C: Already awake and fully responsive
-            Else
+            // Path B: Wake from GC6 (GSTA == 1, 12V alive, PERST# toggled)
+            ElseIf ((\_SB.PCI0.GPP0.PEGP.DGPS != Zero))
             {
-                If (CondRefOf (\_SB.PCI0.SBRG.EC0.DBD1))
-                {
-                    \_SB.PCI0.SBRG.EC0.DBD1 = One
-                    \_SB.PCI0.SBRG.EC0.DBD2 = Zero
-                }
+                \_SB.PCI0.GPP0.PEGP.GC6O ()
             }
 
             M453 = Local4
