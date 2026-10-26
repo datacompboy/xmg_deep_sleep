@@ -1,79 +1,78 @@
 ---
 name: deep-sleep-investigate
-description: Master architectural framework and investigation suite for laptop Modern Standby (S0ix / S3), ACPI, and discrete GPU power-state debugging. Governs Stage 1 (Incident Forensics & Target Audit) and Stage 2 (Iterative Convergence Loop) and indexes specialized subskills and diagnostic tools.
+description: Practical troubleshooting protocol for laptop Modern Standby (S0ix), ACPI, and discrete GPU power-state debugging. Covers Stage 1 (Triage & Baseline) and Stage 2 (Iterative Debugging Loop), indexing specialized subskills and diagnostic scripts.
 ---
 
-# Deep Sleep & Modern Standby (S0ix) Master Investigation Skill
+# Deep Sleep & Modern Standby (S0ix) Investigation Guide
 
 ## Overview
 
-This skill provides an aerospace-grade, disciplined engineering methodology for diagnosing, reverse-engineering, and permanently fixing laptop sleep, wake, and standby failures—including Modern Standby (S0ix / Low Power S0 Idle), discrete GPU power gating (Optimus / SmartAccess Graphics), multi-function PCIe devices, and ACPI bytecode defects.
+This guide provides a structured debugging process for diagnosing and fixing laptop sleep, wake, and standby failures—such as Modern Standby (S0ix / Low Power S0 Idle) hangs, unexpected reboots, discrete GPU power-transition crashes, and battery drain.
 
-It replaces ad-hoc bare-metal trial-and-error with a **two-stage architecture**:
-1. **Stage 1: Setup & Initial Forensics** (Target contract discovery, live ACPI extraction, USB quarantine, and 3D baseline characterization).
-2. **Stage 2: The Iterative Engineering Loop** (Telemetry analysis $\to$ Formal design modeling $\to$ Old design invalidation $\to$ Surgical AML synthesis $\to$ Static pre-verification $\to$ Empirical data collection).
+Instead of unguided trial-and-error patching directly on hardware, it organizes the work into two stages:
+1. **Stage 1: Setup & Initial Triage:** Extract crash telemetry, dump live ACPI tables, set up a non-invasive USB bootloader, and establish an unmodified baseline.
+2. **Stage 2: Iterative Debugging Loop:** Analyze failure symptoms $\to$ write down state transitions $\to$ check why prior patch failed $\to$ synthesize minimal AML $\to$ verify statically $\to$ test on hardware.
 
 ```mermaid
 graph TD
-    Master["Deep Sleep Master Skill<br/>(Methodological Framework & Architecture)"]
+    Master["Investigation Guide & Workflow"]
     
-    Master --> Tools["Diagnostic Python Suite (skill/scripts/)<br/>• sleepstudy-reader.py (Unified HTML/TXT/DMP)<br/>• parse_minidump.py (64-bit Kernel Crash Dumps)"]
+    Master --> Tools["Diagnostic Python Scripts (skill/scripts/)<br/>• sleepstudy-reader.py (HTML/TXT/DMP)<br/>• parse_minidump.py (Kernel Crash Dumps)"]
     
-    Master --> Subskills["Specialized Subagent Skills"]
-    Subskills --> Sub1["1. deep-sleep-forensics<br/>(Telemetry Triage, Registry Audit, 3D Baseline)"]
-    Subskills --> Sub2["2. acpi-design-architect<br/>(Design.md, 16 Scenarios, Invalidation)"]
+    Master --> Subskills["Specialized Subskills"]
+    Subskills --> Sub1["1. deep-sleep-forensics<br/>(Telemetry Triage, Registry Check, Baseline)"]
+    Subskills --> Sub2["2. acpi-design-architect<br/>(State Matrix, Failure Mode Mapping)"]
     Subskills --> Sub3["3. acpi-patch-synthesizer<br/>(Surgical AML, Bounded Loops, Passive _PS0)"]
-    Subskills --> Sub4["4. acpi-static-verifier<br/>(AST Compilation, ECAM Alignment, Dark Wake Proof)"]
-    Subskills --> Sub5["5. standby-empirical-collector<br/>(2-Test Active Loop, Stress Cycling, DRIPS Proof)"]
+    Subskills --> Sub4["4. acpi-static-verifier<br/>(AST Compilation, ECAM Alignment, Sanity Checks)"]
+    Subskills --> Sub5["5. standby-empirical-collector<br/>(2-Test Active Loop, Stress Cycling, Telemetry)"]
 ```
 
 ---
 
-## The 7 Engineering Invariants
+## Core Engineering Invariants
 
-Before touching firmware bytecode, internalize these seven core principles:
+Keep these practical rules in mind before touching firmware bytecode:
 
-1. **Empirical Baseline First:** Never patch without establishing the unmodified factory behavior across the full operational matrix. (Prevents chasing non-existent bugs like the POFF fallacy).
-2. **Respect the Fundamental S0 vs S0ix Boundary:**
-   * **`Video Idle Timeout`:** The OS is **running actively in S0**. User services and Windows Audio are in D0. Never power-gate devices or assert `PERST#` here.
-   * **`Screen Off Request / System Sleep`:** The OS coordinates **system-wide S0ix quiescence**. Devices transition together via ACPI Power Resources (`_PR3`).
-3. **ACPI Separation of Concerns (`_PRx` vs `_PSx`):**
-   * **Power Resources (`_PR0..3`):** Manage physical shared hardware power rails, clock gates, reset lines (`PERST#`), and OSPM reference counting.
-   * **Device States (`_PS0..3`):** Must remain **passive status stubs** (`_PSC = Zero`). Putting active rail wake logic in `_PS0` causes 0.15s Modern Standby Dark Wake maintenance queries to wake rails without `_PR0`, crashing the machine upon re-sleep.
-4. **Target Contract Discovery ("Know Your Target"):** Never treat endpoints as generic black boxes. Always audit multi-function couplings (Function 0 GPU vs Function 1 Audio), hardware strap persistence across power cuts (`HDAE`), and OS driver configuration (`MSISupported : 0` vs MSI).
-5. **The PCIe Error Model:**
-   * Configuration *Reads* (`0xFFFF`) over dead/training links do not throw exceptions $\rightarrow$ cause **silent infinite loops** if polled unbounded.
-   * Configuration *Writes* to dead/unaligned links generate Completer Aborts $\rightarrow$ trigger **instant cold reboots (MCA reset)**.
-6. **The Principle of Minimal Blast Radius:** Fix only the broken loop or register restore. Never replace 8 ACPI methods when fixing 2 is sufficient. Permanently delete bulk copy operations (`VGAR = VGAB`).
-7. **The Specification-Driven Invariant (The Meta-Law):**
-   * **Never patch via trial-and-error on bare metal.** Every iteration must produce a formal design specification ([`Design.md`](file:///home/datacompboy/fun/xmg/Bios-XMG-NEO_XNE15E20_XNE17E20_BIOS-N106v2/Design.md)), an exhaustive operational state matrix, and a static pre-verification proof *before* booting or flashing bytecode.
+1. **Test Stock Baseline First:** Never test a patch without first knowing how the clean factory firmware behaves across basic sleep/wake scenarios. Otherwise, you end up "fixing" functional vendor code and chasing imaginary bugs.
+2. **Respect the S0 vs S0ix Boundary:**
+   * **`Video Idle Timeout` (Display Off):** The OS is **running actively in S0**. User apps and audio services are in D0. Never cut power rails or assert hardware reset (`PERST#`) during display turn-off.
+   * **`Screen Off Request / System Sleep`:** The OS coordinates **system-wide quiescence** into S0ix. Devices transition together via ACPI Power Resources (`_PR3`).
+3. **Separation of Concerns (`_PRx` vs `_PSx`):**
+   * **Power Resources (`_PR0..3`):** Manage physical shared power rails, clocks, reset lines, and OSPM reference counting.
+   * **Device States (`_PS0..3`):** Must remain **passive status stubs** (`_PSC = Zero`). Putting active rail wake calls inside `_PS0` causes display-off background maintenance queries (Dark Wakes) to power up hardware without updating OSPM reference counts, crashing the system upon re-sleep.
+4. **Audit Target Hardware & OS Drivers:** Do not assume endpoint behavior. Check whether devices have secondary functions sharing the same link, whether hardware straps clear across power-down, and whether drivers use MSI or legacy line interrupts (`MSISupported : 0`).
+5. **The PCIe Bus Error Model:**
+   * Reading registers (`0xFFFF`) over an unpowered or training link returns Master Abort without exceptions $\rightarrow$ causes **infinite hangs** if polled in unbounded while-loops.
+   * Writing to unpowered endpoints or unaligned Host Bridge registers triggers Completer Aborts $\rightarrow$ causes **immediate hardware resets (MCA reboots)**.
+6. **Minimal Blast Radius:** Fix only the broken loop or register restore. Avoid bulk block copies across configuration space, which write uninitialized zeroes or corrupt read-only capabilities.
+7. **Model Before Patching:** Write down the state transitions across operational scenarios and verify them before rebooting hardware to test.
 
 ---
 
-## Specialized Subagent Skills & Runbooks
+## Specialized Subagent Subskills
 
-This master skill coordinates five focused subskills:
+This guide coordinates five focused subskills:
 
-| Subskill | Location | Core Responsibilities |
+| Subskill | Location | Role |
 |:---|:---|:---|
-| **[`deep-sleep-forensics`](file:///home/datacompboy/fun/xmg/skill/deep-sleep-forensics/SKILL.md)** | `skill/deep-sleep-forensics/SKILL.md` | Ingests SleepStudy, WinEvents, and Minidumps; audits OS registry (`MSISupported`); dumps live ACPI tables via `acpidump -b`; runs 3D baseline sweep to isolate the Active Failure Set. |
-| **[`acpi-design-architect`](file:///home/datacompboy/fun/xmg/skill/acpi-design-architect/SKILL.md)** | `skill/acpi-design-architect/SKILL.md` | Systems Architect: Maps failure telemetry to hardware primitives; formally invalidates old designs; authors declarative `Design.md` and the N-scenario operational state matrix. |
-| **[`acpi-patch-synthesizer`](file:///home/datacompboy/fun/xmg/skill/acpi-patch-synthesizer/SKILL.md)** | `skill/acpi-patch-synthesizer/SKILL.md` | Firmware Engineer: Translates `Design.md` into surgical ASL/AML bytecode complying with bounded loops, $T_\text{PVPERL}$ delays, passive `_PS0`, and 32-bit ECAM alignment; generates OpenCore renames. |
-| **[`acpi-static-verifier`](file:///home/datacompboy/fun/xmg/skill/acpi-static-verifier/SKILL.md)** | `skill/acpi-static-verifier/SKILL.md` | Safety Auditor: Strict pre-boot compiler and linter; verifies 0 AST errors, 32-bit DWORD ECAM alignment, $T_\text{PVPERL}$ settling delays, and proves Dark Wake passivity before hardware deployment. |
-| **[`standby-empirical-collector`](file:///home/datacompboy/fun/xmg/skill/standby-empirical-collector/SKILL.md)** | `skill/standby-empirical-collector/SKILL.md` | Test Suite: Executes the fast 2-test active loop (`T5` and `T6`); audits audio/volume flyout responsiveness; runs 50-cycle `PwrTest` automated stress; verifies >90% hardware S0i3 DRIPS residency. |
+| **[`deep-sleep-forensics`](./deep-sleep-forensics/SKILL.md)** | `./deep-sleep-forensics/SKILL.md` | Ingests SleepStudy, WinEvents, and Minidumps; checks OS registry flags (`MSISupported`); dumps live ACPI tables (`acpidump -b`); runs baseline sweep to find the active failure set. |
+| **[`acpi-design-architect`](./acpi-design-architect/SKILL.md)** | `./acpi-design-architect/SKILL.md` | Maps failure telemetry to hardware primitives; invalidates prior attempts; authors the operational state matrix (`Design.md`). |
+| **[`acpi-patch-synthesizer`](./acpi-patch-synthesizer/SKILL.md)** | `./acpi-patch-synthesizer/SKILL.md` | Translates design into surgical ASL/AML patches complying with bounded loops, $T_\text{PVPERL}$ delays, passive `_PS0`, and ECAM alignment; generates OpenCore renames. |
+| **[`acpi-static-verifier`](./acpi-static-verifier/SKILL.md)** | `./acpi-static-verifier/SKILL.md` | Catches syntax errors, undefined externals, ECAM misalignment, and Dark Wake passivity violations before hardware testing. |
+| **[`standby-empirical-collector`](./standby-empirical-collector/SKILL.md)** | `./standby-empirical-collector/SKILL.md` | Executes the 2-test active loop; checks audio/volume responsiveness; runs 50-cycle automated stress; verifies S0i3 residency. |
 
 ---
 
 ## Tooling Suite: `skill/scripts/`
 
-The diagnostic tools are centralized in [`skill/scripts/`](file:///home/datacompboy/fun/xmg/skill/scripts/):
+The diagnostic scripts live in [`scripts/`](./scripts/):
 
-### 1. Unified Forensic Reader ([`sleepstudy-reader.py`](file:///home/datacompboy/fun/xmg/skill/scripts/sleepstudy-reader.py))
-Universal entry point for all power telemetry and crash artifacts. Automatically detects file types:
-* **SleepStudy HTML:** Parses modern SPA JSON (`LocalSprData`) and legacy HTML tables; extracts Death Sessions, blocker devices, and energy drain.
+### 1. Unified Forensic Reader ([`sleepstudy-reader.py`](./scripts/sleepstudy-reader.py))
+Handles multiple power telemetry formats:
+* **SleepStudy HTML:** Parses modern Windows 11 `ScenarioInstances` and legacy HTML tables; extracts abnormal shutdown sessions and blocker devices.
 * **WinEvents TXT:** Auto-detects UTF-16LE and UTF-8 PowerShell exports; filters Event IDs `41, 42, 107, 109, 506, 507, 1001, 6006, 6008`.
 * **Kernel Crash Dumps:** Dissects Windows minidumps and triage dumps (`*.dmp`).
-* **Directory Scan Mode:** Point to any folder (e.g., `reports/`) to scan and summarize all artifacts in one sweep.
+* **Directory Scan Mode:** Point to any folder (e.g. `reports/`) to summarize all artifacts in one sweep.
 
 ```bash
 # Examples:
@@ -83,12 +82,10 @@ python3 skill/scripts/sleepstudy-reader.py crash.dmp
 python3 skill/scripts/sleepstudy-reader.py reports/
 ```
 
-### 2. Deep Minidump Parser ([`parse_minidump.py`](file:///home/datacompboy/fun/xmg/skill/scripts/parse_minidump.py))
-Specialized Windows 64-bit crash dump analyzer:
-* Extracts BugCheck codes (`0x19C`, `0x9F`, `0xA0`, `0x15F`, `0x133`, `0x50`, `0x7E`).
-* Deep subcode analysis for `0x19C (0x50)` (display driver wake timeout) and `0x9F (0x3)` (pending power IRP).
-* Scans memory for triage components (`DxkW`, `DxgK`, `HDAudBus`, `pci.sys`, `nvlddmkm`).
-* Lists all loaded `.sys` kernel driver modules.
+### 2. Kernel Minidump Parser ([`parse_minidump.py`](./scripts/parse_minidump.py))
+Pure Python 64-bit Windows crash dump analyzer:
+* Decodes common power BugCheck codes: `0x19C (0x50)` (display driver wake timeout), `0x9F (0x3)` (pending power IRP), `0xA0`, `0x15F`, `0x133`, `0x50`, `0x7E`.
+* Scans memory for loaded driver modules (`.sys`) and triage dump signatures.
 
 ```bash
 python3 skill/scripts/parse_minidump.py minidump.dmp
@@ -96,32 +93,32 @@ python3 skill/scripts/parse_minidump.py minidump.dmp
 
 ---
 
-## The 2-Stage Engineering Workflow Summary
+## Debugging Workflow Summary
 
 ```mermaid
 sequenceDiagram
     autonumber
-    participant Master as Orchestrator / User
-    participant Stage1 as Stage 1: Setup & Forensics
+    participant Lead as Orchestrator / Engineer
+    participant Stage1 as Stage 1: Triage & Baseline
     participant Stage2 as Stage 2: Iterative Loop
 
-    Master->>Stage1: 1. Ingest historical telemetry & dump live ACPI
-    Master->>Stage1: 2. Set up OpenCore USB quarantine & run 3D baseline
-    Stage1-->>Master: Active Failure Set Isolated (e.g. T5 & T6)
+    Lead->>Stage1: 1. Ingest historical telemetry & dump live ACPI
+    Lead->>Stage1: 2. Set up USB bootloader & run baseline sweep
+    Stage1-->>Lead: Active Failure Set Isolated (e.g. T5 & T6)
 
-    loop Iterative Engineering Convergence
-        Master->>Stage2: Step 1: Analyze previous attempt delta
-        Master->>Stage2: Step 2: Generate Design.md & 16-Scenario Matrix
-        Master->>Stage2: Step 3: Statically invalidate previous failure
-        Master->>Stage2: Step 4: Synthesize surgical AML patch & OpenCore config
-        Master->>Stage2: Step 5: Static Pre-Verification (AST, ECAM, Dark Wake)
-        alt Static Verification Fails
-            Stage2-->>Master: NO-GO: Fix AST/invariants in Step 4
-        else Static Verification Passes (GO)
-            Master->>Stage2: Step 6: Deploy to USB & run 2-Test Active Loop
-            Stage2-->>Master: Empirical Telemetry & Stability Results
+    loop Iterative Loop
+        Lead->>Stage2: Step 1: Analyze previous failure telemetry
+        Lead->>Stage2: Step 2: Update state matrix & Design.md
+        Lead->>Stage2: Step 3: Identify why previous attempt failed
+        Lead->>Stage2: Step 4: Synthesize minimal AML patch
+        Lead->>Stage2: Step 5: Static verification (AST, ECAM, Dark Wake)
+        alt Static Checks Fail
+            Stage2-->>Lead: Fix syntax / logic before booting
+        else Static Checks Pass
+            Lead->>Stage2: Step 6: Deploy to USB & test on hardware
+            Stage2-->>Lead: Collect telemetry & evaluate stability
         end
     end
 ```
 
-For installation and deployment to internal NVMe storage once verified, consult [`skill/Install.md`](file:///home/datacompboy/fun/xmg/skill/Install.md).
+For installation and deployment to internal storage once verified, refer to [`Install.md`](./Install.md).

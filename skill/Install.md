@@ -1,9 +1,9 @@
 # OpenCore ACPI Fix: Permanent Installation & Rollback Guide
 
-**Platform:** Schenker XMG NEO 15 (M22) / Tongfang GM5RGxx  
-**Operating System:** Windows 11 64-bit (with BitLocker & Secure Boot)  
-**Target Firmware:** AMI Aptio V, BIOS `N.1.15A14`  
-**Components:** Acidanthera OpenCore (Headless ACPI Patcher) + [`SSDT-SLEEPFIX.aml`](file:///home/datacompboy/fun/xmg/Bios-XMG-NEO_XNE15E20_XNE17E20_BIOS-N106v2/EFI/OC/ACPI/SSDT-SLEEPFIX.aml)  
+**Platform:** UEFI Laptop (Windows 10 / 11 64-bit)  
+**Operating System:** Windows 10 / 11 64-bit (with BitLocker & Secure Boot)  
+**Target Firmware:** UEFI Firmware (AMI Aptio, InsydeH2O, Phoenix)  
+**Components:** Acidanthera OpenCore (Headless ACPI Patcher) + `SSDT-SLEEPFIX.aml`  
 **Date:** September 27, 2026  
 
 ---
@@ -66,7 +66,7 @@ Keep the USB thumb drive you used during initial testing (or any standard Window
 
 Secure Boot validates bootloaders by checking their cryptographic signature or binary hash against the motherboard's **Authorized Signature Database (`db`)**. Because OpenCore is open-source, Microsoft does not sign it by default. 
 
-On AMI Aptio V firmware (Tongfang GM5RGxx), you have two clean ways to authorize it:
+On modern UEFI firmware (such as AMI Aptio V), you have two clean ways to authorize it:
 
 ```mermaid
 flowchart LR
@@ -109,7 +109,7 @@ If you prefer traditional certificate-based signing (useful if you rebuild `Open
    ```bash
    # Generate 2048-bit RSA private key and self-signed X.509 certificate (valid 10 years)
    openssl req -new -x509 -newkey rsa:2048 -sha256 -nodes -days 3650 \
-       -subj "/CN=XMG OpenCore Key/" -keyout mykey.key -out mykey.crt
+       -subj "/CN=OpenCore Secure Boot Key/" -keyout mykey.key -out mykey.crt
 
    # Convert certificate to DER format for UEFI BIOS enrollment
    openssl x509 -in mykey.crt -outform DER -out mykey.cer
@@ -149,7 +149,7 @@ mountvol S: /s
 ```
 
 ### Step 3: Copy OpenCore to the Internal ESP
-Assuming your workspace or USB drive containing the `EFI` folder is at `D:\fun\xmg\Bios-XMG-NEO...` (adjust source path as needed):
+Assuming your USB drive or workspace containing the verified `EFI` folder is at `E:\` (adjust drive letter as needed):
 ```powershell
 # Create the OC directory on your internal ESP
 mkdir S:\EFI\OC
