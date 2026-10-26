@@ -11,6 +11,10 @@ This subskill covers **Stage 1 (Setup & Baseline)** and **Step 1 (Analyze Previo
 
 It extracts diagnostic information from the target machine before writing patches, helping you isolate the exact conditions needed to reproduce the issue.
 
+> [!NOTE]
+> **Scope Boundary:**
+> `deep-sleep-forensics` is strictly responsible for **empirical telemetry extraction and hardware audit** (decoding SleepStudy, minidumps, event logs, registry interrupt modes, and dumping live ACPI tables). It does **not** simulate ACPI control flow or re-validate previous ASL code. Downstream static evaluation of previous firmware versions against updated design scenarios is handled in **Step 3** by [`acpi-static-verifier`](../acpi-static-verifier/SKILL.md).
+
 ---
 
 ## 1. Diagnostic Scripts

@@ -22,12 +22,14 @@ flowchart TD
 
     subgraph Stage2["Stage 2: The Iterative Loop"]
         L1["Step 1: Analyze Previous Result<br/>(Delta from previous test or initial triage)"]
-        --> L2["Step 2: State Matrix & Design<br/>(Design.md, Traps, Operational Matrix)"]
-        --> L3["Step 3: Invalidate Prior Attempt<br/>(Note why previous patch failed)"]
+        --> L2["Step 2: Design Generation<br/>(Update Design.md & State Matrix)"]
+        --> L3["Step 3: Old Design Static Validation<br/>(Statically prove previous code fails new scenario)"]
         --> L4["Step 4: Synthesize Minimal Patch<br/>(Surgical AML, Bounded Loops, Passive _PS0)"]
-        --> L5["Step 5: Static Sanity Checks<br/>(AST Compilation, ECAM Alignment, Dark Wake Passivity)"]
+        --> L5["Step 5: Static Pre-Verification<br/>(Verify new code passes all scenarios statically)"]
         --> L6["Step 6: Empirical Testing<br/>(2-Test Loop, Telemetry Capture, PwrTest)"]
-        L6 -->|Fails or exposes edge case| L1
+        L3 -->|Old code passes<br/>Hypothesis incomplete| L2
+        L5 -->|Static checks fail| L4
+        L6 -->|Fails on hardware| L1
         L6 -->|Passes all scenarios| Done["Sign-Off"]
     end
 
@@ -92,23 +94,32 @@ sequenceDiagram
     participant Orch as Orchestrator
     participant Forensics as Forensics / Triage
     participant Arch as Systems Modeler
-    participant Synth as Patch Writer
     participant Verifier as Static Checker
+    participant Synth as Patch Writer
     participant Collector as Hardware Tester
 
     Orch->>Forensics: Step 1: Analyze Previous Result
     Forensics-->>Orch: Failure Symptom & Telemetry Delta
     Orch->>Arch: Step 2: Update Design & State Matrix
-    Arch-->>Orch: Updated Design.md & Matrix
-    Orch->>Arch: Step 3: Invalidate Prior Attempt
-    Arch-->>Orch: Note on Why Prior Attempt Failed
-    Orch->>Synth: Step 4: Synthesize Minimal Patch
-    Synth-->>Orch: Compiled AML & OpenCore Config
-    Orch->>Verifier: Step 5: Static Sanity Checks
-    Verifier-->>Orch: Validation Summary (AST, ECAM, Dark Wake)
-    Note over Orch,Verifier: Gate: Only proceed to hardware if static checks pass
-    Orch->>Collector: Step 6: Empirical Testing
-    Collector-->>Orch: 2-Test Loop Results & Telemetry
+    Arch-->>Orch: Updated Design.md & Scenario Requirements
+    Orch->>Verifier: Step 3: Static Validation of Previous Version (Negative Proof)
+    alt Old Version Passes New Scenario Check
+        Verifier-->>Orch: Inconclusive (Model fails to reproduce bug statically)
+        Note over Orch,Arch: Halt: Refine Design.md before touching code
+    else Old Version Fails as Predicted (Defect Reproduced)
+        Verifier-->>Orch: Static Defect Confirmed (Failing AST node & scenario isolated)
+        Orch->>Synth: Step 4: Synthesize Minimal Patch
+        Synth-->>Orch: Compiled AML & OpenCore Config
+        Orch->>Verifier: Step 5: Static Pre-Verification of New Patch (Positive Proof)
+        alt Static Checks Fail
+            Verifier-->>Orch: Static Violations Detected
+            Note over Orch,Synth: Fix syntax / logic before booting
+        else Static Checks Pass 100%
+            Verifier-->>Orch: Clean Pass (Pre-Flight Acceptance)
+            Orch->>Collector: Step 6: Empirical Testing on Hardware
+            Collector-->>Orch: 2-Test Loop Results & Telemetry
+        end
+    end
 ```
 
 ### Step 1: Analyze Previous Result
@@ -124,10 +135,15 @@ sequenceDiagram
 * **Role / Subskill:** [`acpi-design-architect`](../acpi-design-architect/SKILL.md)
 * Update `Design.md`.
 * Map expected hardware states across the operational scenarios (display on/off, audio idle/active, desktop/lock, AC/DC, shallow/deep/dark wake).
+* Formulate the exact failure condition as a new/modified scenario test case.
 
-### Step 3: Invalidate Prior Attempt
-* **Role / Subskill:** [`acpi-design-architect`](../acpi-design-architect/SKILL.md)
-* Document why the previous patch broke (e.g. coupling power rail toggling directly to device `_PS0`).
+### Step 3: Old Design Static Validation (Negative Proof)
+* **Role / Subskill:** [`acpi-static-verifier`](../acpi-static-verifier/SKILL.md)
+* **Objective:** Statically evaluate the *previous* version's source (`SSDT-v(N-1).dsl` or OEM ASL baseline) against the *newly added scenario* in `Design.md`.
+* **Execution:** Trace the control paths and AST nodes of the old patch to verify if it violates the new scenario.
+* **Gate Requirement:**
+  * **Pass Condition (Defect Confirmed):** The previous version **must fail** the scenario check statically, isolating the exact line, register write, or method call that caused the failure (e.g. `_PS0` turns on power rail without `_PR0`, or Bit 10 masks INTx). This confirms the design hypothesis accurately models the defect.
+  * **Fail Condition (Inconclusive Hypothesis):** If the previous version *passes* the scenario check, our hypothesis does not explain the empirical failure. Do not synthesize code yet—return to Step 2 to refine `Design.md`.
 
 ### Step 4: Synthesize Minimal Patch
 * **Role / Subskill:** [`acpi-patch-synthesizer`](../acpi-patch-synthesizer/SKILL.md)
@@ -140,14 +156,15 @@ sequenceDiagram
   * 32-bit DWORD ECAM operations for SoC Host Bridges.
 * Compile bytecode with `iasl -tc` and configure in-memory 4-byte ASCII method renames in OpenCore `config.plist`.
 
-### Step 5: Static Sanity Checks
+### Step 5: Static Pre-Verification (Positive Proof)
 * **Role / Subskill:** [`acpi-static-verifier`](../acpi-static-verifier/SKILL.md)
-* Run pre-boot checks:
-  * AST syntax & external scope resolution (0 errors, 0 unresolved symbols).
-  * 32-bit ECAM DWORD alignment check.
-  * $T_\text{PVPERL}$ settling timing check.
-  * Dark Wake passivity check (verify `_PS0` has no active rail calls).
-* If static checks fail, fix issues in Step 4 before testing on hardware.
+* Run the pre-boot verification pipeline on the newly synthesized patch:
+  * Check 1: AST syntax & external scope resolution (0 errors, 0 unresolved symbols).
+  * Check 2: Bootloader schema & patch linting (`ocvalidate config.plist`).
+  * Check 3: Bus timing ($T_\text{PVPERL} \ge 10\text{ms}$) & 32-bit ECAM DWORD alignment check.
+  * Check 4: Dark Wake passivity check (verify `_PS0` has no active rail calls).
+  * Check 5: Scenario State Matrix simulation (verify 100% PASS across all defined scenarios in `Design.md`).
+* **Gate Requirement:** Only proceed to hardware deployment (Step 6) if all static checks pass cleanly with 0 regressions. If static checks fail, return to Step 4 to fix the patch before touching hardware.
 
 ### Step 6: Empirical Testing
 * **Role / Subskill:** [`standby-empirical-collector`](../standby-empirical-collector/SKILL.md)
@@ -164,10 +181,11 @@ sequenceDiagram
 
 ## Subagent Dispatch Table
 
-| Subagent Role | TypeName | Subskill Instruction Reference |
-|:---|:---|:---|
-| `Forensics / Triage` | `research` or `self` | [`deep-sleep-forensics`](../deep-sleep-forensics/SKILL.md) |
-| `State Machine Modeler` | `self` | [`acpi-design-architect`](../acpi-design-architect/SKILL.md) |
-| `AML Patch Writer` | `self` | [`acpi-patch-synthesizer`](../acpi-patch-synthesizer/SKILL.md) |
-| `Static Checker` | `research` or `self` | [`acpi-static-verifier`](../acpi-static-verifier/SKILL.md) |
-| `Hardware Tester` | `self` | [`standby-empirical-collector`](../standby-empirical-collector/SKILL.md) |
+| Subagent Role | Iteration Steps | TypeName | Subskill Instruction Reference |
+|:---|:---|:---|:---|
+| `Forensics / Triage` | Stage 1, Step 1 | `research` or `self` | [`deep-sleep-forensics`](../deep-sleep-forensics/SKILL.md) |
+| `State Machine Modeler` | Step 2 | `self` | [`acpi-design-architect`](../acpi-design-architect/SKILL.md) |
+| `Static Checker (Negative Proof)` | Step 3 | `research` or `self` | [`acpi-static-verifier`](../acpi-static-verifier/SKILL.md) |
+| `AML Patch Writer` | Step 4 | `self` | [`acpi-patch-synthesizer`](../acpi-patch-synthesizer/SKILL.md) |
+| `Static Checker (Positive Proof)` | Step 5 | `research` or `self` | [`acpi-static-verifier`](../acpi-static-verifier/SKILL.md) |
+| `Hardware Tester` | Step 6 | `self` | [`standby-empirical-collector`](../standby-empirical-collector/SKILL.md) |

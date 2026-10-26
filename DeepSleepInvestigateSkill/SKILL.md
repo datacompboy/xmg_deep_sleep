@@ -22,8 +22,8 @@ graph TD
     Master --> Subskills["Specialized Subskills"]
     Subskills --> Sub1["1. deep-sleep-forensics<br/>(Telemetry Triage, Registry Check, Baseline)"]
     Subskills --> Sub2["2. acpi-design-architect<br/>(State Matrix, Failure Mode Mapping)"]
-    Subskills --> Sub3["3. acpi-patch-synthesizer<br/>(Surgical AML, Bounded Loops, Passive _PS0)"]
-    Subskills --> Sub4["4. acpi-static-verifier<br/>(AST Compilation, ECAM Alignment, Sanity Checks)"]
+    Subskills --> Sub3["3. acpi-static-verifier<br/>(Dual-Mode: Old Design Invalidation & New Patch Verification)"]
+    Subskills --> Sub4["4. acpi-patch-synthesizer<br/>(Surgical AML, Bounded Loops, Passive _PS0)"]
     Subskills --> Sub5["5. standby-empirical-collector<br/>(2-Test Active Loop, Stress Cycling, Telemetry)"]
 ```
 
@@ -56,9 +56,9 @@ This guide coordinates five focused subskills:
 | Subskill | Location | Role |
 |:---|:---|:---|
 | **[`deep-sleep-forensics`](./deep-sleep-forensics/SKILL.md)** | `./deep-sleep-forensics/SKILL.md` | Ingests SleepStudy, WinEvents, and Minidumps; checks OS registry flags (`MSISupported`); dumps live ACPI tables (`acpidump -b`); runs baseline sweep to find the active failure set. |
-| **[`acpi-design-architect`](./acpi-design-architect/SKILL.md)** | `./acpi-design-architect/SKILL.md` | Maps failure telemetry to hardware primitives; invalidates prior attempts; authors the operational state matrix (`Design.md`). |
+| **[`acpi-design-architect`](./acpi-design-architect/SKILL.md)** | `./acpi-design-architect/SKILL.md` | Maps failure telemetry to hardware primitives; authors operational state matrix (`Design.md`); formulates failing scenario for static invalidation. |
+| **[`acpi-static-verifier`](./acpi-static-verifier/SKILL.md)** | `./acpi-static-verifier/SKILL.md` | Dual-mode static verification: (1) Step 3 Invalidation (proves prior patch fails updated scenario statically); (2) Step 5 Pre-verification (checks AST syntax, ECAM alignment, and passivity of new patch). |
 | **[`acpi-patch-synthesizer`](./acpi-patch-synthesizer/SKILL.md)** | `./acpi-patch-synthesizer/SKILL.md` | Translates design into surgical ASL/AML patches complying with bounded loops, $T_\text{PVPERL}$ delays, passive `_PS0`, and ECAM alignment; generates OpenCore renames. |
-| **[`acpi-static-verifier`](./acpi-static-verifier/SKILL.md)** | `./acpi-static-verifier/SKILL.md` | Catches syntax errors, undefined externals, ECAM misalignment, and Dark Wake passivity violations before hardware testing. |
 | **[`standby-empirical-collector`](./standby-empirical-collector/SKILL.md)** | `./standby-empirical-collector/SKILL.md` | Executes the 2-test active loop; checks audio/volume responsiveness; runs 50-cycle automated stress; verifies S0i3 residency. |
 
 ---
@@ -107,16 +107,20 @@ sequenceDiagram
     Stage1-->>Lead: Active Failure Set Isolated (e.g. T5 & T6)
 
     loop Iterative Loop
-        Lead->>Stage2: Step 1: Analyze previous failure telemetry
-        Lead->>Stage2: Step 2: Update state matrix & Design.md
-        Lead->>Stage2: Step 3: Identify why previous attempt failed
-        Lead->>Stage2: Step 4: Synthesize minimal AML patch
-        Lead->>Stage2: Step 5: Static verification (AST, ECAM, Dark Wake)
-        alt Static Checks Fail
-            Stage2-->>Lead: Fix syntax / logic before booting
-        else Static Checks Pass
-            Lead->>Stage2: Step 6: Deploy to USB & test on hardware
-            Stage2-->>Lead: Collect telemetry & evaluate stability
+        Lead->>Stage2: Step 1: Analyze previous failure telemetry (Forensics)
+        Lead->>Stage2: Step 2: Update state matrix & Design.md (Architect)
+        Lead->>Stage2: Step 3: Statically validate previous version fails new scenario (Verifier)
+        alt Old Design Does Not Fail (Hypothesis Incomplete)
+            Stage2-->>Lead: Refine design model before writing code
+        else Old Design Failure Confirmed (Negative Proof)
+            Lead->>Stage2: Step 4: Synthesize minimal AML patch (Synthesizer)
+            Lead->>Stage2: Step 5: Static pre-verification of new patch (Verifier)
+            alt Static Checks Fail
+                Stage2-->>Lead: Fix syntax / logic before booting
+            else Static Checks Pass (Positive Proof)
+                Lead->>Stage2: Step 6: Deploy to USB & test on hardware (Collector)
+                Stage2-->>Lead: Collect telemetry & evaluate stability
+            end
         end
     end
 ```

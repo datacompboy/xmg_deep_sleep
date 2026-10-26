@@ -1,18 +1,20 @@
 ---
 name: acpi-design-architect
-description: Maps failure telemetry to hardware power primitives, documents why previous patch attempts failed, and maintains the operational state matrix (Design.md) before code synthesis.
+description: Maps failure telemetry to hardware power primitives, formulates new test scenarios and failure hypotheses in the operational state matrix (Design.md), and hands off to static verifier for defect reproduction before code synthesis.
 ---
 
 # ACPI Design Architect Subskill
 
 ## Overview
 
-This subskill covers **Step 2 (State Matrix & Design)** and **Step 3 (Invalidate Prior Attempt)** in the iterative debugging loop.
+This subskill covers **Step 2 (State Matrix & Design)** in the iterative debugging loop.
 
 It focuses on mapping observed symptoms to bus/hardware states and keeping an operational state matrix (`Design.md`) updated. Writing down the expected hardware states across scenarios ensures the team doesn't play whack-a-mole where fixing sleep breaks display idle, or vice versa.
 
 > [!NOTE]
-> This step produces **declarative requirements** (what state each rail, reset line, and device should be in). Writing the actual ASL code is handled by [`acpi-patch-synthesizer`](../acpi-patch-synthesizer/SKILL.md).
+> This step produces **declarative requirements** (what state each rail, reset line, and device should be in). 
+> * Defect reproduction is verified statically by [`acpi-static-verifier`](../acpi-static-verifier/SKILL.md) in Step 3.
+> * Bytecode synthesis is handled by [`acpi-patch-synthesizer`](../acpi-patch-synthesizer/SKILL.md) in Step 4.
 
 ---
 
@@ -31,31 +33,30 @@ When analyzing initial crash logs or a failed test run, map the observed symptom
 
 ---
 
-## 2. Invalidate Prior Attempt (Why Did the Last Patch Fail?)
+## 2. Formulating the Failure Scenario & Hypothesis for Step 3
 
-Before jumping into code edits, write down exactly why the previous patch broke:
+Before modifying or synthesizing new code, formalize the failure scenario and state why the previous patch (`v(N-1)`) broke:
 
-### Invalidation Template:
+### Scenario & Invalidation Template (in `Design.md`):
 ```markdown
-### Invalidation: Iteration N
-* **Symptom:** [e.g. Spontaneous reboot ~45s after sleep]
-* **Failing Scenario:** [e.g. Modern Standby background maintenance window with screen off]
-* **Why It Failed:** 
-  The patch turned on power rails inside `_PS0`. When the OS fired a quick background
-  maintenance check with the screen off, `_PS0` powered on the hardware, but the OS
-  never evaluated `_PR0` (since the display remained off). When the maintenance window
-  ended, `_OFF` was never called, leaving the link awake while the SoC tried to enter
-  low-power idle.
-* **Correction Needed:** 
-  Keep `_PS0` as a passive stub (`_PSC = Zero`). Power rail sequencing must stay strictly
-  in Power Resources (`_PR0..3`).
+### Scenario Sxx: [Name, e.g. Modern Standby Display-Off Maintenance Window]
+* **Trigger & Context:** Screen turns off, system in S0ix, OS background daemon queries device status.
+* **Expected Invariants:** 
+  - Physical power rails must remain OFF (`PWEN = 0`).
+  - Device `_PS0` evaluation must remain a passive stub (`_PSC = 0`) without rail side-effects.
+  - OSPM `_PR0` refcount must remain 0.
+* **Failure Hypothesis for Version N-1:** 
+  The patch turned on power rails inside `_PS0`. When the OS executed a display-off maintenance query,
+  `_PS0` powered on the hardware, but OSPM never evaluated `_PR0`. When the window ended,
+  rails were left powered while the SoC attempted idle sleep, triggering a spontaneous reboot.
+* **Handoff to Verifier:** Request `acpi-static-verifier` to simulate Scenario Sxx on Version N-1 (Step 3).
 ```
 
 ---
 
 ## 3. Operational State Matrix (`Design.md`)
 
-Maintain a state matrix enumerating the operating scenarios:
+Maintain a comprehensive state matrix enumerating all operating scenarios:
 * **Display:** On (Active) / Off (Video Idle)
 * **Audio:** Idle / Active Stream (D0)
 * **Logon State:** Desktop Session / Lock Screen
@@ -70,14 +71,15 @@ For each scenario, specify expected hardware states:
 | **S02** | Display Idle in S0 | L0 / L1 | De-asserted (1) | On (1) | Set (1) | 1 |
 | **S03** | Modern Standby Maintenance Window | L23 / Offline | Asserted (0) | Off (0) | Unchanged | 0 |
 | **S04** | User Keypress Wake from Deep Sleep | L0 | De-asserted (1) | On (1) | Set (1) | 1 |
+| **S05** | Audio Playback during Display Idle | L0 / L1 | De-asserted (1) | On (1) | Set (1) | 1 |
 | *...* | *(Other applicable permutations)* | *...* | *...* | *...* | *...* | *...* |
 
 ---
 
 ## 4. Handoff Checklist
 
-Before passing requirements to [`acpi-patch-synthesizer`](../acpi-patch-synthesizer/SKILL.md), confirm:
-* [ ] The observed failure symptom is identified.
-* [ ] The previous failed attempt has a clear explanation of why it broke.
-* [ ] The state matrix covers display idle, full system sleep, and display-off maintenance wakes.
-* [ ] Requirements state what the hardware should do, without getting bogged down in ASL syntax.
+Before passing requirements downstream:
+* [ ] The observed failure symptom is mapped to a hardware primitive.
+* [ ] A new or updated scenario test case is added to `Design.md`.
+* [ ] **Gate Step 3:** Instruct [`acpi-static-verifier`](../acpi-static-verifier/SKILL.md) to statically evaluate Version N-1 against the scenario.
+* [ ] **Gate Step 4:** Only after `acpi-static-verifier` confirms defect reproduction (Mode A), pass the requirements to [`acpi-patch-synthesizer`](../acpi-patch-synthesizer/SKILL.md).
